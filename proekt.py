@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import Normalizer
-import seaborn as sns
+
 
 
 def load_data():
@@ -20,18 +20,20 @@ def load_data():
     data_2016 = pd.read_csv("data/2016_Financial_Data.csv")
     data_2017 = pd.read_csv("data/2017_Financial_Data.csv")
     data_2018 = pd.read_csv("data/2018_Financial_Data.csv")
-    data_2018.keys()
+    #Gi chitame csv fajlovite i gi postavuvame vo dict() za pobrz pristap do podatocite
     return {2014: data_2014, 2015: data_2015, 2016: data_2016, 2017: data_2017, 2018: data_2018}
 
 
 def transform_data(datasets, normalize=True, class_mean=True):
+    #Ako normalize parametarot e True vrshime normalizacija, ako ne vrshime standardizacija
     if normalize == True:
         scaler = Normalizer()
     else:
         scaler = StandardScaler()
 
     for year in datasets.keys():
-        #Gi otstranuvame prvite dve koloni bidejki se prazni, a tretata bidejki ne vrshime regresija na datotekata
+        #Gi otstranuvame prvata kolona bidejki e samo ID kolona, vtorata i tretata kolona bidejki se prazni, a tretata
+        # bidejki ne vrshime regresija na datotekata
         datasets[year] = datasets[year].drop(
             columns=["Unnamed: 0","operatingCycle", "cashConversionCycle", "{} PRICE VAR [%]".format(year + 1)])
 
@@ -41,15 +43,22 @@ def transform_data(datasets, normalize=True, class_mean=True):
         if class_mean == True:
             Class_0 = datasets[year][datasets[year].Class == 0]
             Class_1 = datasets[year][datasets[year].Class == 1]
+
+            #Vrshime iteracija na site redici
             for index, row in datasets[year].iterrows():
+                #Vrshime iteracija na site koloni od redicata
                 for col, value in row.iteritems():
-                    if pd.isna(value):
+                    if type(value)==float and pd.isna(value):
+                        #Ako redicata e od klasa 0, zemame prosek na site redici od klasa 0
                         if row["Class"] == 0:
                             mean = Class_0[col].mean()
                         else:
+                            #Zemame prosek na site redici od klasa 1
                             mean = Class_1[col].mean()
                         datasets[year].at[index, col] = mean
 
+        #Vrshime popolnuvanje na vrednosti so prosekot na kolonata ako class mean e False, i skaliranje na vrednostite
+        #za sekoja kolonna
         for column in datasets[year].columns:
             if datasets[year][column].dtype == np.float64:
                 
@@ -58,6 +67,7 @@ def transform_data(datasets, normalize=True, class_mean=True):
                 features = scaler.fit_transform(datasets[year][column].values.reshape(-1, 1))
                 datasets[year][column] = features
 
+        #Sektorot go labelirame so numerichki vrednosti
         lab = LabelEncoder()
         datasets[year]["Sector"] = lab.fit_transform(datasets[year]["Sector"])
 
@@ -66,28 +76,35 @@ def transform_data(datasets, normalize=True, class_mean=True):
 def getTrainTestDatasets(datasets, train_keys, test_keys):
     train_datasets = []
     test_datasets = []
+    #Gi prezemame trening setovite od datasets dictionary
     for key in train_keys:
         train_datasets.append(datasets[key])
-
+    # Gi prezemame test setovite od datasets dictionary
     for key in test_keys:
         test_datasets.append(datasets[key])
+    #Gi spojuvame datotekite za trening i gi spojuvame vo edna datoteka
     train = pd.concat(train_datasets)
+    # Gi spojuvame datotekite za testiranje i gi spojuvame vo edna datoteka
     test = pd.concat(test_datasets)
     return train, test
 
 
 def predict_data(X_train, X_test, Y_train, Y_test):
+    #Parametrite za sekoj klasifikator
     C_parameters = [0.5, 1, 1.5, 2, 3]
     depth_parameters = [10, 30, 50, 80, 100]
     nn_parameters = [3, 5, 7, 9, 12]
     ann_parameters = [5, 10, 15, 20, 30]
     ann2_parameters = [[5, 5], [5, 10], [10, 5], [10, 10], [15, 15]]
+    #Rezultatite gi chuvame vo lista
     SVM_results = []
     KNN_results = []
     LR_results = []
     RF_results = []
     ANN_results = []
     ANN2_results = []
+
+    #Vrshime klasifikacija za sekoj parametar na sekoj klasifikator
     for C, depth, nn, layers, layers_2 in zip(C_parameters, depth_parameters, nn_parameters, ann_parameters,
                                               ann2_parameters):
         svc = SVC(C=C, random_state=0)
@@ -102,6 +119,7 @@ def predict_data(X_train, X_test, Y_train, Y_test):
 
         knn = KNeighborsClassifier(n_neighbors=nn, n_jobs=-1)
 
+        #Gi obuchuvame klasifikatorite
         svc.fit(X_train, Y_train)
         print("Finished training Support Vector Classifier with C =", C)
         lr.fit(X_train, Y_train)
@@ -115,6 +133,7 @@ def predict_data(X_train, X_test, Y_train, Y_test):
         rf.fit(X_train, Y_train)
         print("Finished training Random Forest Classifier with depth =", depth)
 
+        #se obiduvame da ja predvidime klasite na primerocite na test setot
         predict_svc = svc.predict(X_test)
         predict_lr = lr.predict(X_test)
         predict_mlp = mlp.predict(X_test)
@@ -122,6 +141,7 @@ def predict_data(X_train, X_test, Y_train, Y_test):
         predict_knn = knn.predict(X_test)
         predict_rf = rf.predict(X_test)
 
+        #Go prikachuvame F1 Score-ot na sekoj klasifikator vo soodvetnata lista
         SVM_results.append(f1_score(Y_test.values.ravel(), predict_svc))
         LR_results.append(f1_score(Y_test.values.ravel(), predict_lr))
         ANN_results.append(f1_score(Y_test.values.ravel(), predict_mlp))
@@ -135,6 +155,8 @@ def predict_data(X_train, X_test, Y_train, Y_test):
     print("MLP with 2 hidden layers:", ANN2_results)
     print("K nearest neighbours:", KNN_results)
     print("Random Forest with 100 estimators:", RF_results)
+
+    #gi prikazhuvame rezultatite vizuelno i gi zemame liniite kako rezultat
     svmline, = plt.plot(np.arange(0, 5), SVM_results, color="r")
     lrline, = plt.plot(np.arange(0, 5), LR_results, color="g")
     mlpline, = plt.plot(np.arange(0, 5), ANN_results, color="b")
@@ -142,6 +164,7 @@ def predict_data(X_train, X_test, Y_train, Y_test):
     knnline, = plt.plot(np.arange(0, 5), KNN_results, color="m")
     rfline, = plt.plot(np.arange(0, 5), RF_results, color="y")
 
+    #Za polesno razbiranje, gi obelezhuvame liniite so imeto na nivniot klasifikator
     plt.legend([svmline, lrline, mlpline, mlp2line, knnline, rfline],
                ["SVM", "Logistic Regression", "MLP 1 layer", "MLP 2 layers", "KNN", "Random Forest"], loc='right', bbox_to_anchor=(1.3, 0.5))
     plt.show()
@@ -188,7 +211,7 @@ def runPredictionWithParameters(normalize=True,class_mean=True):
     X_test = testSet.drop(columns=["Class"])
     Y_test = testSet["Class"]
 
-
+    #Transform funkcijata gi zema onie koloni koi go zadovoluvaat parametarot pri fit funkcijata
     X_train = pca.transform(X_train)
     X_test = pca.transform(X_test)
 
@@ -205,6 +228,7 @@ def runPredictionWithParameters(normalize=True,class_mean=True):
     X_test = testSet.drop(columns=["Class"])
     Y_test = testSet["Class"]
 
+    # Povtorno se vrshi transformacija bidejki odnovo se prezemaat test i train setovite
     X_train = pca.transform(X_train)
     X_test = pca.transform(X_test)
 
